@@ -51,7 +51,7 @@ setup(name='hexview',
                    'Topic :: Utilities'],
       packages=['hexviewlib',],
       package_dir={'hexviewlib': 'hexviewlib'},
-      scripts=['hexview',],
+      scripts=['hexview', 'hexview.bat'],
       data_files=[('share/doc/hexview', ['LICENSE', 'README.md']),
                   ('share/doc/hexview/master/images', ['images/hexview.png',])]
 )
