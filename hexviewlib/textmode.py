@@ -29,6 +29,7 @@ import re
 import sys
 import time
 import traceback
+import numpy as np
 
 # the main video object
 VIDEO = None
@@ -158,7 +159,7 @@ class ScreenBuf:
         self.w = w
         self.h = h
 
-        self.textbuf = bytearray(w * h)
+        self.textbuf = np.zeros(w*h, dtype=np.uint32) # bytearray(w * h)
 
     def __getitem__(self, idx):
         '''Returns tuple: (ch, color) at idx
@@ -181,10 +182,10 @@ class ScreenBuf:
         if ch == 0:
             # blank
             ch = ' '
-        elif ch > 0x7f:
-            # special curses character
-            ch &= 0x7f
-            ch |= 0x400000
+#        elif ch > 0x7f:
+#            # special curses character
+#            ch &= 0x7f
+#            ch |= 0x400000
         else:
             # make string
             ch = chr(ch)
@@ -203,10 +204,10 @@ class ScreenBuf:
 
         if isinstance(ch, str):
             ch = ord(ch)
-        elif ch > 0x400000:
-            # special curses character
-            ch &= 0x7f
-            ch |= 0x80
+#        elif ch > 0x400000:
+#            # special curses character
+#            ch &= 0x7f
+#            ch |= 0x80
 
         if isinstance(idx, int):
             offset = idx
@@ -232,23 +233,23 @@ class ScreenBuf:
 
         if isinstance(ch, str):
             ch = ord(ch)
-        elif ch > 0x400000:
-            # special curses character
-            ch &= 0x7f
-            ch |= 0x80
+#        elif ch > 0x400000:
+#            # special curses character
+#            ch &= 0x7f
+#            ch |= 0x80
 
         offset = self.w * y + x
-        self.textbuf[offset:offset + w] = bytes(chr(ch) * w, ScreenBuf.CODEPAGE)
+        self.textbuf[offset:offset + w] = ch # bytes(chr(ch) * w, ScreenBuf.CODEPAGE)
 
     def vline(self, x, y, h, ch, color=0):
         '''repeat character horizontally'''
 
         if isinstance(ch, str):
             ch = ord(ch)
-        elif ch > 0x400000:
-            # special curses character
-            ch &= 0x7f
-            ch |= 0x80
+#        elif ch > 0x400000:
+#            # special curses character
+#            ch &= 0x7f
+#            ch |= 0x80
 
         offset = self.w * y + x
         for _ in range(0, h):
@@ -345,10 +346,10 @@ class ColorScreenBuf(ScreenBuf):
         if ch == 0:
             # blank
             ch = ' '
-        elif ch > 0x7f:
-            # special curses character
-            ch &= 0x7f
-            ch |= 0x400000
+#        elif ch > 0x7f:
+#            # special curses character
+#            ch &= 0x7f
+#            ch |= 0x400000
         else:
             # make string
             ch = chr(ch)
@@ -368,10 +369,10 @@ class ColorScreenBuf(ScreenBuf):
 
         if isinstance(ch, str):
             ch = ord(ch)
-        elif ch > 0x400000:
-            # special curses character
-            ch &= 0x7f
-            ch |= 0x80
+#        elif ch > 0x400000:
+#            # special curses character
+#            ch &= 0x7f
+#            ch |= 0x80
 
         if isinstance(idx, int):
             offset = idx
@@ -391,7 +392,7 @@ class ColorScreenBuf(ScreenBuf):
 
         offset = self.w * y + x
         w = len(msg)
-        self.textbuf[offset:offset + w] = bytes(msg, ScreenBuf.CODEPAGE)
+        self.textbuf[offset:offset + w] = [ord(ch) for ch in msg] # bytes(msg, ScreenBuf.CODEPAGE)
         self.colorbuf[offset:offset + w] = bytes(chr(color) * w, ScreenBuf.CODEPAGE)
 
     def hline(self, x, y, w, ch, color):        # pylint: disable=signature-differs
@@ -399,13 +400,13 @@ class ColorScreenBuf(ScreenBuf):
 
         if isinstance(ch, str):
             ch = ord(ch)
-        elif ch > 0x400000:
-            # special curses character
-            ch &= 0x7f
-            ch |= 0x80
+#        elif ch > 0x400000:
+#            # special curses character
+#            ch &= 0x7f
+#            ch |= 0x80
 
         offset = self.w * y + x
-        self.textbuf[offset:offset + w] = bytes(chr(ch) * w, ScreenBuf.CODEPAGE)
+        self.textbuf[offset:offset + w] = ch # bytes(chr(ch) * w, ScreenBuf.CODEPAGE)
         self.colorbuf[offset:offset + w] = bytes(chr(color) * w, ScreenBuf.CODEPAGE)
 
     def vline(self, x, y, h, ch, color):        # pylint: disable=signature-differs
@@ -413,10 +414,10 @@ class ColorScreenBuf(ScreenBuf):
 
         if isinstance(ch, str):
             ch = ord(ch)
-        elif ch > 0x400000:
-            # special curses character
-            ch &= 0x7f
-            ch |= 0x80
+#        elif ch > 0x400000:
+#            # special curses character
+#            ch &= 0x7f
+#            ch |= 0x80
 
         offset = self.w * y + x
         for _ in range(0, h):
