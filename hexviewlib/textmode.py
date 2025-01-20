@@ -30,6 +30,93 @@ import sys
 import time
 import traceback
 
+import locale
+
+# Enable Unicode support
+locale.setlocale(locale.LC_ALL, '')
+
+# Using CP437 Characters for Box Drawing
+# Here are some common box-drawing characters in CP437 and their mappings:
+# 
+# Unicode	CP437 Byte	Character	Description
+# U+2502	0xB3	│	Vertical line
+# U+2500	0xC4	─	Horizontal line
+# U+251C	0xC3	├	Left T-junction
+# U+2524	0xB4	┤	Right T-junction
+# U+253C	0xC5	┼	Cross junction
+# U+250C	0xDA	┌	Top-left corner
+# U+2510	0xBF	┐	Top-right corner
+# U+2514	0xC0	└	Bottom-left corner
+# U+2518	0xD9	┘	Bottom-right corner
+# U+252C	0xC2	┬	Top T-junction
+# U+2534	0xC1	┴	Bottom T-junction
+# U+2592    0xB0    ░   Checkerboard
+
+USE_CP437 = True
+
+class wcurses:
+    if USE_CP437:
+        SCREENCODE_MASK = 0xff
+        ACS_VLINE = 0xb3
+        ACS_HLINE = 0xc4
+        ACS_LTEE = 0xc3
+        ACS_RTEE = 0xb4
+        ACS_TTEE = 0xc2
+        ACS_BTEE = 0xc1
+        ACS_PLUS = 0xc5
+        ACS_ULCORNER = 0xda
+        ACS_LLCORNER = 0xc0
+        ACS_URCORNER = 0xbf
+        ACS_LRCORNER = 0xd9
+        ACS_CKBOARD = 0xb0
+    else:
+        SCREENCODE_MASK = 0x7f
+        ACS_HLINE       = curses.ACS_HLINE
+        ACS_VLINE       = curses.ACS_VLINE
+        ACS_LTEE        = curses.ACS_LTEE
+        ACS_RTEE        = curses.ACS_RTEE
+        ACS_TTEE        = curses.ACS_TTEE
+        ACS_BTEE        = curses.ACS_BTEE
+        ACS_PLUS        = curses.ACS_PLUS
+        ACS_ULCORNER    = curses.ACS_ULCORNER
+        ACS_LLCORNER    = curses.ACS_LLCORNER
+        ACS_URCORNER    = curses.ACS_URCORNER
+        ACS_LRCORNER    = curses.ACS_LRCORNER
+        ACS_CKBOARD     = curses.ACS_CKBOARD
+
+def wchr(ch):
+    if ch >= 0xb0:
+        debug = 0
+    if USE_CP437:
+        s = bytes([ch]).decode('cp437')
+        return s
+    else:
+        return chr(ch)
+    
+def char_to_screencode(ch):
+    if isinstance(ch, str):
+        ch = ord(ch)
+    elif ch > 0x400000:
+        # special curses character
+        ch &= 0x7f
+        ch |= 0x80
+    return ch
+
+def screencode_to_char(ch):
+    if isinstance(ch, str):
+        return ch
+    if ch == 0:
+        # blank
+        ch = ' '
+    elif ch > wcurses.SCREENCODE_MASK:
+        # special curses character
+        ch &= wcurses.SCREENCODE_MASK
+        ch |= 0x400000
+    else:
+        # make string
+        ch = wchr(ch)
+    return ch
+
 # the main video object
 VIDEO = None
 
@@ -147,7 +234,7 @@ class ScreenBuf:
     # so use latin_1 or cp1252
     # Note: we must use single-byte character encoding because we use a bytearray
     # (which is a bad choice in today's world, but ScreenBuf mimics VGA)
-    CODEPAGE = 'cp1252'
+    CODEPAGE = 'cp437' if USE_CP437 else 'cp1252'
 
     def __init__(self, w, h):
         '''initialize'''
@@ -178,17 +265,7 @@ class ScreenBuf:
             raise ValueError('invalid argument')
 
         ch = self.textbuf[offset]
-        if ch == 0:
-            # blank
-            ch = ' '
-        elif ch > 0x7f:
-            # special curses character
-            ch &= 0x7f
-            ch |= 0x400000
-        else:
-            # make string
-            ch = chr(ch)
-
+        ch = screencode_to_char(ch)
         return ch, 0
 
     def __setitem__(self, idx, value):
@@ -201,12 +278,7 @@ class ScreenBuf:
 
         ch, _ = value
 
-        if isinstance(ch, str):
-            ch = ord(ch)
-        elif ch > 0x400000:
-            # special curses character
-            ch &= 0x7f
-            ch |= 0x80
+        ch = char_to_screencode(ch)
 
         if isinstance(idx, int):
             offset = idx
@@ -230,25 +302,15 @@ class ScreenBuf:
     def hline(self, x, y, w, ch, color=0):
         '''repeat character horizontally'''
 
-        if isinstance(ch, str):
-            ch = ord(ch)
-        elif ch > 0x400000:
-            # special curses character
-            ch &= 0x7f
-            ch |= 0x80
+        ch = char_to_screencode(ch)
 
         offset = self.w * y + x
-        self.textbuf[offset:offset + w] = bytes(chr(ch) * w, ScreenBuf.CODEPAGE)
+        self.textbuf[offset:offset + w] = bytes(wchr(ch) * w, ScreenBuf.CODEPAGE)
 
     def vline(self, x, y, h, ch, color=0):
         '''repeat character horizontally'''
 
-        if isinstance(ch, str):
-            ch = ord(ch)
-        elif ch > 0x400000:
-            # special curses character
-            ch &= 0x7f
-            ch |= 0x80
+        ch = char_to_screencode(ch)
 
         offset = self.w * y + x
         for _ in range(0, h):
@@ -342,16 +404,7 @@ class ColorScreenBuf(ScreenBuf):
             raise ValueError('invalid argument')
 
         ch = self.textbuf[offset]
-        if ch == 0:
-            # blank
-            ch = ' '
-        elif ch > 0x7f:
-            # special curses character
-            ch &= 0x7f
-            ch |= 0x400000
-        else:
-            # make string
-            ch = chr(ch)
+        ch = screencode_to_char(ch)
 
         color = self.colorbuf[offset]
         return ch, color
@@ -366,12 +419,7 @@ class ColorScreenBuf(ScreenBuf):
 
         ch, color = value
 
-        if isinstance(ch, str):
-            ch = ord(ch)
-        elif ch > 0x400000:
-            # special curses character
-            ch &= 0x7f
-            ch |= 0x80
+        ch = char_to_screencode(ch)
 
         if isinstance(idx, int):
             offset = idx
@@ -397,26 +445,16 @@ class ColorScreenBuf(ScreenBuf):
     def hline(self, x, y, w, ch, color):        # pylint: disable=signature-differs
         '''repeat character horizontally'''
 
-        if isinstance(ch, str):
-            ch = ord(ch)
-        elif ch > 0x400000:
-            # special curses character
-            ch &= 0x7f
-            ch |= 0x80
+        ch = char_to_screencode(ch)
 
         offset = self.w * y + x
-        self.textbuf[offset:offset + w] = bytes(chr(ch) * w, ScreenBuf.CODEPAGE)
+        self.textbuf[offset:offset + w] = bytes(wchr(ch) * w, ScreenBuf.CODEPAGE)
         self.colorbuf[offset:offset + w] = bytes(chr(color) * w, ScreenBuf.CODEPAGE)
 
     def vline(self, x, y, h, ch, color):        # pylint: disable=signature-differs
         '''repeat character horizontally'''
 
-        if isinstance(ch, str):
-            ch = ord(ch)
-        elif ch > 0x400000:
-            # special curses character
-            ch &= 0x7f
-            ch |= 0x80
+        ch = char_to_screencode(ch)
 
         offset = self.w * y + x
         for _ in range(0, h):
@@ -666,6 +704,7 @@ class Video:
         if attr is None:
             attr = self.curses_color
 
+        ch = screencode_to_char(ch)
         if y >= self.h - 1 and x >= self.w - 1:
             STDSCR.insch(y, x, ch, attr)
         else:
@@ -706,6 +745,7 @@ class Video:
         self.screenbuf.hline(x, y, w, ch, color)
         if isinstance(ch, str):
             ch = ord(ch)
+        ch = screencode_to_char(ch)
         STDSCR.hline(y, x, ch, w, attr)
 
     def vline(self, x, y, h, ch, color=-1, alt=False):
@@ -724,23 +764,24 @@ class Video:
         self.screenbuf.vline(x, y, h, ch, color)
         if isinstance(ch, str):
             ch = ord(ch)
+        ch = screencode_to_char(ch)
         STDSCR.vline(y, x, ch, h, attr)
 
     def hsplit(self, x, y, w, ch, color=-1, alt=False):
         '''draw a horizontal split'''
 
-        self.hline(x + 1, y, w - 2, curses.ACS_HLINE, color, alt)
+        self.hline(x + 1, y, w - 2, wcurses.ACS_HLINE, color, alt)
         # put tee characters on the sides
-        self.putch(x, y, curses.ACS_LTEE, color, alt)
-        self.putch(x + w - 1, y, curses.ACS_RTEE, color, alt)
+        self.putch(x, y, wcurses.ACS_LTEE, color, alt)
+        self.putch(x + w - 1, y, wcurses.ACS_RTEE, color, alt)
 
     def vsplit(self, x, y, h, ch, color=-1, alt=False):
         '''draw a vertical split'''
 
-        self.vline(x, y + 1, h - 2, curses.ACS_VLINE, color, alt)
+        self.vline(x, y + 1, h - 2, wcurses.ACS_VLINE, color, alt)
         # put tee characters on the sides
-        self.putch(x, y, curses.ACS_TTEE, color, alt)
-        self.putch(x, y + h - 1, curses.ACS_BTEE, color, alt)
+        self.putch(x, y, wcurses.ACS_TTEE, color, alt)
+        self.putch(x, y + h - 1, wcurses.ACS_BTEE, color, alt)
 
     def fillrect(self, x, y, w, h, color=-1, alt=False):
         '''draw rectangle at x, y'''
@@ -774,45 +815,45 @@ class Video:
 
         # top
         if 0 <= y < self.h:
-            self.screenbuf.hline(cx, y, cw, curses.ACS_HLINE, color)
+            self.screenbuf.hline(cx, y, cw, wcurses.ACS_HLINE, color)
             STDSCR.hline(y, cx, curses.ACS_HLINE, cw, attr)
 
         # left
         if 0 <= x < self.w:
-            self.screenbuf.vline(x, cy, ch, curses.ACS_VLINE, color)
+            self.screenbuf.vline(x, cy, ch, wcurses.ACS_VLINE, color)
             STDSCR.vline(cy, x, curses.ACS_VLINE, ch, attr)
 
         # right
         rx = x + w - 1
         if 0 <= rx < self.w:
-            self.screenbuf.vline(rx, cy, ch, curses.ACS_VLINE, color)
+            self.screenbuf.vline(rx, cy, ch, wcurses.ACS_VLINE, color)
             STDSCR.vline(cy, rx, curses.ACS_VLINE, ch, attr)
 
         # bottom
         by = y + h - 1
         if 0 <= by < self.h:
-            self.screenbuf.hline(cx, by, cw, curses.ACS_HLINE, color)
+            self.screenbuf.hline(cx, by, cw, wcurses.ACS_HLINE, color)
             STDSCR.hline(by, cx, curses.ACS_HLINE, cw, attr)
 
         # top left corner
         if self.rect.clip_point(x, y):
-            self.screenbuf[x, y] = (curses.ACS_ULCORNER, color)
-            self.curses_putch(x, y, curses.ACS_ULCORNER, attr)
+            self.screenbuf[x, y] = (wcurses.ACS_ULCORNER, color)
+            self.curses_putch(x, y, wcurses.ACS_ULCORNER, attr)
 
         # bottom left corner
         if self.rect.clip_point(x, by):
-            self.screenbuf[x, by] = (curses.ACS_LLCORNER, color)
-            self.curses_putch(x, by, curses.ACS_LLCORNER, attr)
+            self.screenbuf[x, by] = (wcurses.ACS_LLCORNER, color)
+            self.curses_putch(x, by, wcurses.ACS_LLCORNER, attr)
 
         # top right corner
         if self.rect.clip_point(rx, y):
-            self.screenbuf[rx, y] = (curses.ACS_URCORNER, color)
-            self.curses_putch(rx, y, curses.ACS_URCORNER, attr)
+            self.screenbuf[rx, y] = (wcurses.ACS_URCORNER, color)
+            self.curses_putch(rx, y, wcurses.ACS_URCORNER, attr)
 
         # bottom right corner
         if self.rect.clip_point(rx, by):
-            self.screenbuf[rx, by] = (curses.ACS_LRCORNER, color)
-            self.curses_putch(rx, by, curses.ACS_LRCORNER, attr)
+            self.screenbuf[rx, by] = (wcurses.ACS_LRCORNER, color)
+            self.curses_putch(rx, by, wcurses.ACS_LRCORNER, attr)
 
     def color_putch(self, x, y, color=-1, alt=False):
         '''put color at x, y'''
@@ -1398,7 +1439,7 @@ class TextWindow(Window):
             y = self.bounds.h - self.scrollbar_h
 
         VIDEO.vline(self.frame.x + self.frame.w - 1, self.bounds.y + y,
-                    self.scrollbar_h, curses.ACS_VLINE, self.colors.border)
+                    self.scrollbar_h, wcurses.ACS_VLINE, self.colors.border)
 
     def draw_scrollbar(self):
         '''draw scrollbar'''
@@ -1414,7 +1455,7 @@ class TextWindow(Window):
             y = self.bounds.h - self.scrollbar_h
 
         VIDEO.vline(self.frame.x + self.frame.w - 1, self.bounds.y + y,
-                    self.scrollbar_h, curses.ACS_CKBOARD,
+                    self.scrollbar_h, wcurses.ACS_CKBOARD,
                     self.colors.scrollbar)
 
     def update_statusbar(self, msg):
@@ -1431,7 +1472,7 @@ class TextWindow(Window):
                 x = 0
                 w = self.bounds.w
             VIDEO.hline(self.bounds.x + x, self.frame.y + self.frame.h - 1, w,
-                        curses.ACS_HLINE, self.colors.border)
+                        wcurses.ACS_HLINE, self.colors.border)
 
         self.status = msg
         self.draw_statusbar()
@@ -2053,7 +2094,7 @@ class Menu(Window):
                 if item.text == '--':
                     # separator line
                     VIDEO.hsplit(self.frame.x, self.bounds.y + y,
-                                 self.frame.w, curses.ACS_HLINE,
+                                 self.frame.w, wcurses.ACS_HLINE,
                                  self.colors.border)
                 else:
                     self.cputs(1, y, item.text, self.colors.menu)
@@ -2853,60 +2894,60 @@ def linemode(mode):
 
     if CURSES_LINES is None:
         # save original curses line characters
-        CURSES_LINES = (curses.ACS_HLINE, curses.ACS_VLINE,
-                        curses.ACS_ULCORNER, curses.ACS_URCORNER,
-                        curses.ACS_LLCORNER, curses.ACS_LRCORNER,
-                        curses.ACS_LTEE, curses.ACS_RTEE,
-                        curses.ACS_TTEE, curses.ACS_BTEE)
+        CURSES_LINES = (wcurses.ACS_HLINE, wcurses.ACS_VLINE,
+                        wcurses.ACS_ULCORNER, wcurses.ACS_URCORNER,
+                        wcurses.ACS_LLCORNER, wcurses.ACS_LRCORNER,
+                        wcurses.ACS_LTEE, wcurses.ACS_RTEE,
+                        wcurses.ACS_TTEE, wcurses.ACS_BTEE)
     else:
         # restore original curses line characters
-        curses.ACS_HLINE = CURSES_LINES[0]
-        curses.ACS_VLINE = CURSES_LINES[1]
-        curses.ACS_ULCORNER = CURSES_LINES[2]
-        curses.ACS_URCORNER = CURSES_LINES[3]
-        curses.ACS_LLCORNER = CURSES_LINES[4]
-        curses.ACS_LRCORNER = CURSES_LINES[5]
-        curses.ACS_LTEE = CURSES_LINES[6]
-        curses.ACS_RTEE = CURSES_LINES[7]
-        curses.ACS_TTEE = CURSES_LINES[8]
-        curses.ACS_BTEE = CURSES_LINES[9]
+        wcurses.ACS_HLINE = CURSES_LINES[0]
+        wcurses.ACS_VLINE = CURSES_LINES[1]
+        wcurses.ACS_ULCORNER = CURSES_LINES[2]
+        wcurses.ACS_URCORNER = CURSES_LINES[3]
+        wcurses.ACS_LLCORNER = CURSES_LINES[4]
+        wcurses.ACS_LRCORNER = CURSES_LINES[5]
+        wcurses.ACS_LTEE = CURSES_LINES[6]
+        wcurses.ACS_RTEE = CURSES_LINES[7]
+        wcurses.ACS_TTEE = CURSES_LINES[8]
+        wcurses.ACS_BTEE = CURSES_LINES[9]
 
     LINEMODE = mode
 
     # redefine character set
     if LINEMODE & LM_ASCII:
-        curses.ACS_HLINE = ord('-')
-        curses.ACS_VLINE = ord('|')
-        curses.ACS_ULCORNER = ord('+')
-        curses.ACS_URCORNER = ord('+')
-        curses.ACS_LLCORNER = ord('+')
-        curses.ACS_LRCORNER = ord('+')
-        curses.ACS_LTEE = ord('+')
-        curses.ACS_RTEE = ord('+')
-        curses.ACS_TTEE = ord('+')
-        curses.ACS_BTEE = ord('+')
+        wcurses.ACS_HLINE = ord('-')
+        wcurses.ACS_VLINE = ord('|')
+        wcurses.ACS_ULCORNER = ord('+')
+        wcurses.ACS_URCORNER = ord('+')
+        wcurses.ACS_LLCORNER = ord('+')
+        wcurses.ACS_LRCORNER = ord('+')
+        wcurses.ACS_LTEE = ord('+')
+        wcurses.ACS_RTEE = ord('+')
+        wcurses.ACS_TTEE = ord('+')
+        wcurses.ACS_BTEE = ord('+')
 
     if not LINEMODE & LM_VLINE:
-        curses.ACS_VLINE = ord(' ')
-        curses.ACS_ULCORNER = curses.ACS_HLINE
-        curses.ACS_URCORNER = curses.ACS_HLINE
-        curses.ACS_LLCORNER = curses.ACS_HLINE
-        curses.ACS_LRCORNER = curses.ACS_HLINE
-        curses.ACS_LTEE = curses.ACS_HLINE
-        curses.ACS_RTEE = curses.ACS_HLINE
-        curses.ACS_TTEE = curses.ACS_HLINE
-        curses.ACS_BTEE = curses.ACS_HLINE
+        wcurses.ACS_VLINE = ord(' ')
+        wcurses.ACS_ULCORNER = wcurses.ACS_HLINE
+        wcurses.ACS_URCORNER = wcurses.ACS_HLINE
+        wcurses.ACS_LLCORNER = wcurses.ACS_HLINE
+        wcurses.ACS_LRCORNER = wcurses.ACS_HLINE
+        wcurses.ACS_LTEE = wcurses.ACS_HLINE
+        wcurses.ACS_RTEE = wcurses.ACS_HLINE
+        wcurses.ACS_TTEE = wcurses.ACS_HLINE
+        wcurses.ACS_BTEE = wcurses.ACS_HLINE
 
     if not LINEMODE & LM_HLINE:
-        curses.ACS_HLINE = ord(' ')
-        curses.ACS_ULCORNER = curses.ACS_VLINE
-        curses.ACS_URCORNER = curses.ACS_VLINE
-        curses.ACS_LLCORNER = curses.ACS_VLINE
-        curses.ACS_LRCORNER = curses.ACS_VLINE
-        curses.ACS_LTEE = curses.ACS_VLINE
-        curses.ACS_RTEE = curses.ACS_VLINE
-        curses.ACS_TTEE = curses.ACS_VLINE
-        curses.ACS_BTEE = curses.ACS_VLINE
+        wcurses.ACS_HLINE = ord(' ')
+        wcurses.ACS_ULCORNER = wcurses.ACS_VLINE
+        wcurses.ACS_URCORNER = wcurses.ACS_VLINE
+        wcurses.ACS_LLCORNER = wcurses.ACS_VLINE
+        wcurses.ACS_LRCORNER = wcurses.ACS_VLINE
+        wcurses.ACS_LTEE = wcurses.ACS_VLINE
+        wcurses.ACS_RTEE = wcurses.ACS_VLINE
+        wcurses.ACS_TTEE = wcurses.ACS_VLINE
+        wcurses.ACS_BTEE = wcurses.ACS_VLINE
 
 
 def init_curses():

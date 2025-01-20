@@ -30,6 +30,11 @@ import curses
 import struct
 import getopt
 
+import locale
+
+# Enable Unicode support
+locale.setlocale(locale.LC_ALL, '')
+
 from hexviewlib import textmode
 
 from hexviewlib.textmode import Rect
@@ -39,6 +44,7 @@ from hexviewlib.textmode import getch, KEY_ESC, KEY_RETURN
 from hexviewlib.textmode import KEY_UP, KEY_DOWN, KEY_LEFT, KEY_RIGHT
 from hexviewlib.textmode import KEY_PAGEUP, KEY_PAGEDOWN, KEY_HOME, KEY_END
 from hexviewlib.textmode import KEY_TAB, KEY_BTAB, KEY_BS, KEY_DEL
+from hexviewlib.textmode import USE_CP437, wcurses
 #from hexviewlib.textmode import debug
 
 VERSION = '1.3'
@@ -352,7 +358,7 @@ class HexWindow(textmode.Window):
 
         if status is None:
             textmode.VIDEO.hline(self.bounds.x + self.bounds.w - 12,
-                        self.bounds.y + self.bounds.h, 10, curses.ACS_HLINE,
+                        self.bounds.y + self.bounds.h, 10, wcurses.ACS_HLINE,
                         self.colors.border)
         else:
             textmode.VIDEO.puts(self.bounds.x + self.bounds.w - 2 - len(status),
@@ -1876,7 +1882,7 @@ class ValueSubWindow(textmode.Window):
 
         textmode.VIDEO.hline(self.frame.x + self.frame.w - 20,
                              self.frame.y + self.frame.h - 1, 18,
-                             curses.ACS_HLINE, self.colors.border)
+                             wcurses.ACS_HLINE, self.colors.border)
         textmode.VIDEO.puts(self.frame.x + self.frame.w - w - 1,
                             self.frame.y + self.frame.h - 1, text,
                             self.colors.status)
@@ -2296,7 +2302,7 @@ under terms of the MIT license'''.format('-' * len(VERSION), VERSION)
         # draw pretty horizontal line in text
         w = len(VERSION) + 8
         x = self.bounds.x + textmode.center_x(w, self.bounds.w)
-        textmode.VIDEO.hline(x, self.frame.y + 3, w, curses.ACS_HLINE,
+        textmode.VIDEO.hline(x, self.frame.y + 3, w, wcurses.ACS_HLINE,
                              self.colors.text)
 
 
