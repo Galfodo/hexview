@@ -43,6 +43,7 @@ from hexviewlib.textmode import KEY_TAB, KEY_BTAB, KEY_BS, KEY_DEL
 
 VERSION = '1.3'
 
+OPT_FORCE_WINDOW_WIDTH = None
 OPT_LINEMODE = textmode.LM_HLINE | textmode.LM_VLINE
 CHAR_ENCODINGS = { name: i for i, name in enumerate(['latin-1', 'cp500', 'cp437', ]) }
 OPT_ENCODING = CHAR_ENCODINGS['latin-1']
@@ -188,11 +189,20 @@ class HexWindow(textmode.Window):
         full_h = h
         # take off height for ValueSubWindow
         h -= 6 if print_values else 0
+        def get_window_and_line_width(available):
+            data_width = 16*3 + 1 + 16
+            extra = 1 + 10 + 1
+            if available < extra + 2 * data_width:
+                return 80, 16
+            else:
+                return 80+data_width, 32
+        w, line_width = get_window_and_line_width(w)            
         # turn off window shadow for HexWindow
         # because it clobbers the bottom statusbar
         super().__init__(x, y, w, h, colors, title, border, shadow=False)
         self.data = None
         self.address = 0
+        self.linesize = line_width
         self.cursor_x = self.cursor_y = 0
         self.mode = HexWindow.MODE_8BIT | (HexWindow.MODE_VALUES if print_values else 0)
         self.selection_start = self.selection_end = 0
@@ -222,9 +232,12 @@ class HexWindow(textmode.Window):
                                         colors)
 
         self.address_fmt = '{:08X}  '
-        self.bytes_offset = 10
-        self.ascii_offset = 60
+        self.update_field_offset(10, 0)
 
+    def update_field_offset(self, byte_offset, extra=0):
+        self.bytes_offset = byte_offset
+        self.ascii_offset = extra + self.bytes_offset + self.linesize*3 + self.linesize//8
+        
     def resize_event(self):
         '''the terminal was resized'''
 
@@ -266,7 +279,7 @@ class HexWindow(textmode.Window):
         Raises OSError on error
         '''
 
-        self.data = MemoryFile(filename, self.bounds.h * 16)
+        self.data = MemoryFile(filename, self.bounds.h * self.linesize)
 
         self.title = os.path.basename(filename)
         if len(self.title) > self.bounds.w:
@@ -282,23 +295,21 @@ class HexWindow(textmode.Window):
         if top_addr <= 0xffff:
             # up to 64 kiB
             self.address_fmt = '{:04X}    '
-            self.bytes_offset = 8
-            self.ascii_offset = 60
+            self.update_field_offset(8, 2)
         elif top_addr <= 0xffffffff:
             # up to 4 GiB
             self.address_fmt = '{:08X}  '
-            self.bytes_offset = 10
-            self.ascii_offset = 60
+            self.update_field_offset(10)
         elif top_addr <= 0xffffffffff:
             # up to 1 TiB
             self.address_fmt = '{:010X}  '
+            self.update_field_offset(12)
             self.bytes_offset = 12
             self.ascii_offset = 62
         else:
             # up to 256 TiB will look fine
             self.address_fmt = '{:012X} '
-            self.bytes_offset = 13
-            self.ascii_offset = 62
+            self.update_field_offset(13)
 
     def show(self):
         '''open the window'''
@@ -366,35 +377,16 @@ class HexWindow(textmode.Window):
         y = 0
         while y < self.bounds.h:
             # address
-            offset = self.address + y * 16
+            offset = self.address + y * self.linesize
             line = self.address_fmt.format(offset)
 
-            # bytes (left block)
-            try:
-                # try fast(er) implementation
-                line += (('{:02X} {:02X} {:02X} {:02X} {:02X} {:02X} {:02X} {:02X}  '
-                          '{:02X} {:02X} {:02X} {:02X} {:02X} {:02X} {:02X} {:02X}').format
-                          (self.data[offset], self.data[offset + 1],
-                           self.data[offset + 2], self.data[offset + 3],
-                           self.data[offset + 4], self.data[offset + 5],
-                           self.data[offset + 6], self.data[offset + 7],
-                           self.data[offset + 8], self.data[offset + 9],
-                           self.data[offset + 10], self.data[offset + 11],
-                           self.data[offset + 12], self.data[offset + 13],
-                           self.data[offset + 14], self.data[offset + 15]))
-            except IndexError:
-                # do the slower version
-                for i in range(0, 8):
-                    try:
-                        line += '{:02X} '.format(self.data[offset + i])
-                    except IndexError:
-                        line += '   '
-                line += ' '
-                for i in range(8, 16):
-                    try:
-                        line += '{:02X} '.format(self.data[offset + i])
-                    except IndexError:
-                        line += '   '
+            for i in range(0, self.linesize):
+                if i % 8 == 0 and i > 0:
+                    line += ' '
+                try:
+                    line += '{:02X} '.format(self.data[offset + i])
+                except IndexError:
+                    line += '   '
 
             self.puts(0, y, line, self.colors.text)
 
@@ -407,47 +399,17 @@ class HexWindow(textmode.Window):
         y = 0
         while y < self.bounds.h:
             # address
-            offset = self.address + y * 16
+            offset = self.address + y * self.linesize
             line = self.address_fmt.format(offset)
 
-            # left block
-            try:
-                # try fast(er) implementation
-                line += (('{:02X}{:02X}  {:02X}{:02X}  {:02X}{:02X}  {:02X}{:02X}   '
-                          '{:02X}{:02X}  {:02X}{:02X}  {:02X}{:02X}  {:02X}{:02X}').format
-                          (self.data[offset], self.data[offset + 1],
-                           self.data[offset + 2], self.data[offset + 3],
-                           self.data[offset + 4], self.data[offset + 5],
-                           self.data[offset + 6], self.data[offset + 7],
-                           self.data[offset + 8], self.data[offset + 9],
-                           self.data[offset + 10], self.data[offset + 11],
-                           self.data[offset + 12], self.data[offset + 13],
-                           self.data[offset + 14], self.data[offset + 15]))
-            except IndexError:
-                # do the slower version
-                for i in range(0, 4):
-                    try:
-                        line += '{:02X}'.format(self.data[offset + i * 2])
-                    except IndexError:
-                        line += '  '
-                    try:
-                        line += '{:02X}'.format(self.data[offset + i * 2 + 1])
-                    except IndexError:
-                        line += '  '
+            for i in range(0, self.linesize):
+                if i % 2 == 0 and i > 0:
                     line += '  '
-
-                offset += 8
-                line += ' '
-                # right block
-                for i in range(0, 4):
-                    try:
-                        line += '{:02X}'.format(self.data[offset + i * 2])
-                    except IndexError:
-                        line += '  '
-                    try:
-                        line += '{:02X}'.format(self.data[offset + i * 2 + 1])
-                    except IndexError:
-                        line += '  '
+                if i % 8 == 0 and i > 0:
+                    line += ' '
+                try:
+                    line += '{:02X}'.format(self.data[offset + i])
+                except IndexError:
                     line += '  '
 
             self.puts(0, y, line, self.colors.text)
@@ -461,64 +423,20 @@ class HexWindow(textmode.Window):
         y = 0
         while y < self.bounds.h:
             # address
-            offset = self.address + y * 16
+            offset = self.address + y * self.linesize
             line = self.address_fmt.format(offset)
 
-            # left block
-            try:
-                # try fast(er) implementation
-                line += (('{:02X}{:02X}{:02X}{:02X}    {:02X}{:02X}{:02X}{:02X}     '
-                          '{:02X}{:02X}{:02X}{:02X}    {:02X}{:02X}{:02X}{:02X}').format
-                          (self.data[offset], self.data[offset + 1],
-                           self.data[offset + 2], self.data[offset + 3],
-                           self.data[offset + 4], self.data[offset + 5],
-                           self.data[offset + 6], self.data[offset + 7],
-                           self.data[offset + 8], self.data[offset + 9],
-                           self.data[offset + 10], self.data[offset + 11],
-                           self.data[offset + 12], self.data[offset + 13],
-                           self.data[offset + 14], self.data[offset + 15]))
-            except IndexError:
-                # do the slower version
-                for i in range(0, 2):
-                    try:
-                        line += '{:02X}'.format(self.data[offset + i * 4])
-                    except IndexError:
-                        line += '  '
-                    try:
-                        line += '{:02X}'.format(self.data[offset + i * 4 + 1])
-                    except IndexError:
-                        line += '  '
-                    try:
-                        line += '{:02X}'.format(self.data[offset + i * 4 + 2])
-                    except IndexError:
-                        line += '  '
-                    try:
-                        line += '{:02X}'.format(self.data[offset + i * 4 + 3])
-                    except IndexError:
-                        line += '  '
+            for i in range(0, self.linesize):
+                if i % 4 == 0 and i > 0:
                     line += '    '
-
-                offset += 8
-                line += ' '
-                # right block
-                for i in range(0, 2):
-                    try:
-                        line += '{:02X}'.format(self.data[offset + i * 4])
-                    except IndexError:
-                        line += '  '
-                    try:
-                        line += '{:02X}'.format(self.data[offset + i * 4 + 1])
-                    except IndexError:
-                        line += '  '
-                    try:
-                        line += '{:02X}'.format(self.data[offset + i * 4 + 2])
-                    except IndexError:
-                        line += '  '
-                    try:
-                        line += '{:02X}'.format(self.data[offset + i * 4 + 3])
-                    except IndexError:
-                        line += '  '
-                    line += '    '
+                if i % 8 == 0 and i > 0:
+                    line += ' '
+                if i % 16 == 0 and i > 0:
+                    line += ''
+                try:
+                    line += '{:02X}'.format(self.data[offset + i])
+                except IndexError:
+                    line += '  '
 
             self.puts(0, y, line, self.colors.text)
 
@@ -531,8 +449,8 @@ class HexWindow(textmode.Window):
         encoding = list(CHAR_ENCODINGS.keys())[OPT_ENCODING]
         invis = []
         line = ''
-        offset = self.address + y * 16
-        for i in range(0, 16):
+        offset = self.address + y * self.linesize
+        for i in range(0, self.linesize):
             try:
                 ch = self.data[offset + i]
                 s = bytes([ch]).decode(encoding)
@@ -570,13 +488,13 @@ class HexWindow(textmode.Window):
         if self.mode & HexWindow.MODE_SELECT:
             self.draw_selection()
 
-        offset = self.address + self.cursor_y * 16 + self.cursor_x
+        offset = self.address + self.cursor_y * self.linesize + self.cursor_x
         x = self.hexview_position(offset)
         self.draw_cursor_at(self.bytes_offset + x, self.cursor_y, color,
                             clear)
 
         y = self.cursor_y
-        ch = self.data[self.address + y * 16 + self.cursor_x]
+        ch = self.data[self.address + y * self.linesize + self.cursor_x]
         self.draw_ascii_cursor(ch, color, clear)
 
         self.update_values()
@@ -620,31 +538,27 @@ class HexWindow(textmode.Window):
         if offset < 0:
             return -1
 
-        pagesize = self.bounds.h * 16
+        pagesize = self.bounds.h * self.linesize
         if offset > self.address + pagesize:
             return -1
 
-        offset = (offset - self.address) % 16
+        offset = (offset - self.address) % self.linesize
 
         x = 0
         if self.mode & HexWindow.MODE_8BIT:
             x = offset * 3
-            if offset >= 8:
-                x += 1
+            x += offset // 8
 
         elif self.mode & HexWindow.MODE_16BIT:
             x = offset // 2 * 6
-            if offset & 1:
-                x += 2
-            if offset >= 8:
-                x += 1
+            x += 2*(offset & 1)
+            x += offset // 8
 
         elif self.mode & HexWindow.MODE_32BIT:
             x = offset // 4 * 12
             mod = offset % 4
             x += mod * 2
-            if offset >= 8:
-                x += 1
+            x += offset // 8
 
         return x
 
@@ -654,15 +568,15 @@ class HexWindow(textmode.Window):
         start = self.selection_start
         if start < self.address:
             start = self.address
-        pagesize = self.bounds.h * 16
+        pagesize = self.bounds.h * self.linesize
         end = self.selection_end
         if end > self.address + pagesize:
             end = self.address + pagesize
 
-        startx = (start - self.address) % 16
-        starty = (start - self.address) // 16
-        endx = (end - self.address) % 16
-        endy = (end - self.address) // 16
+        startx = (start - self.address) % self.linesize
+        starty = (start - self.address) // self.linesize
+        endx = (end - self.address) % self.linesize
+        endy = (end - self.address) // self.linesize
 
         # ASCII view
         if starty == endy:
@@ -673,12 +587,12 @@ class HexWindow(textmode.Window):
         else:
             textmode.VIDEO.color_hline((self.bounds.x + self.ascii_offset +
                                         startx),
-                                       self.bounds.y + starty, 16 - startx,
+                                       self.bounds.y + starty, self.linesize - startx,
                                        self.colors.cursor)
             for j in range(starty + 1, endy):
                 textmode.VIDEO.color_hline((self.bounds.x +
                                             self.ascii_offset),
-                                           self.bounds.y + j, 16,
+                                           self.bounds.y + j, self.linesize,
                                            self.colors.cursor)
             textmode.VIDEO.color_hline(self.bounds.x + self.ascii_offset,
                                        self.bounds.y + endy, endx,
@@ -694,7 +608,7 @@ class HexWindow(textmode.Window):
                                        self.bounds.y + starty, endx - startx,
                                        self.colors.cursor)
         else:
-            w = 16 * 3
+            w = self.linesize * 3
             textmode.VIDEO.color_hline((self.bounds.x + self.bytes_offset +
                                         startx),
                                        self.bounds.y + starty, w - startx,
@@ -714,7 +628,7 @@ class HexWindow(textmode.Window):
             return
 
         # get data at cursor
-        offset = self.address + self.cursor_y * 16 + self.cursor_x
+        offset = self.address + self.cursor_y * self.linesize + self.cursor_x
         try:
             data = self.data[offset:offset + 8]
         except IndexError:
@@ -742,7 +656,7 @@ class HexWindow(textmode.Window):
     def scroll_up(self, nlines=1):
         '''scroll nlines up'''
 
-        self.address -= nlines * 16
+        self.address -= nlines * self.linesize
         if self.address < 0:
             self.address = 0
 
@@ -751,9 +665,9 @@ class HexWindow(textmode.Window):
     def scroll_down(self, nlines=1):
         '''scroll nlines down'''
 
-        addr = self.address + nlines * 16
+        addr = self.address + nlines * self.linesize
 
-        pagesize = self.bounds.h * 16
+        pagesize = self.bounds.h * self.linesize
         if addr > len(self.data) - pagesize:
             addr = len(self.data) - pagesize
         if addr < 0:
@@ -790,7 +704,7 @@ class HexWindow(textmode.Window):
                 # no change (already at end)
                 return
         else:
-            addr = self.address + (self.cursor_y + 1) * 16 + self.cursor_x
+            addr = self.address + (self.cursor_y + 1) * self.linesize + self.cursor_x
             if addr >= len(self.data):
                 # can not go beyond EOF
                 return
@@ -815,7 +729,7 @@ class HexWindow(textmode.Window):
         if not self.cursor_x:
             if self.cursor_y > 0:
                 self.cursor_y -= 1
-            self.cursor_x = 15
+            self.cursor_x = self.linesize - 1
         else:
             self.cursor_x -= 1
 
@@ -825,7 +739,7 @@ class HexWindow(textmode.Window):
     def move_right(self):
         '''move cursor right'''
 
-        if self.cursor_x >= 15 and self.cursor_y >= self.bounds.h - 1:
+        if self.cursor_x >= self.linesize-1 and self.cursor_y >= self.bounds.h - 1:
             # scroll down
             addr = self.address
             self.scroll_down()
@@ -833,14 +747,14 @@ class HexWindow(textmode.Window):
                 # no change (already at end)
                 return
         else:
-            addr = self.address + self.cursor_y * 16 + self.cursor_x + 1
+            addr = self.address + self.cursor_y * self.linesize + self.cursor_x + 1
             if addr >= len(self.data):
                 # can not go beyond EOF
                 return
 
             self.clear_cursor()
 
-        if self.cursor_x >= 15:
+        if self.cursor_x >= self.linesize-1:
             self.cursor_x = 0
             if self.cursor_y < self.bounds.h - 1:
                 self.cursor_y += 1
@@ -863,7 +777,7 @@ class HexWindow(textmode.Window):
     def roll_right(self):
         '''move right by one byte'''
 
-        top = len(self.data) - self.bounds.h * 16
+        top = len(self.data) - self.bounds.h * self.linesize
         if self.address < top:
             self.address += 1
             self.draw()
@@ -930,7 +844,7 @@ class HexWindow(textmode.Window):
     def move_end(self):
         '''go to last page of document'''
 
-        pagesize = self.bounds.h * 16
+        pagesize = self.bounds.h * self.linesize
         top = len(self.data) - pagesize
         if top < 0:
             top = 0
@@ -942,8 +856,8 @@ class HexWindow(textmode.Window):
             self.clear_cursor()
 
         if len(self.data) < pagesize:
-            self.cursor_y = len(self.data) // 16
-            self.cursor_x = len(self.data) % 16
+            self.cursor_y = len(self.data) // self.linesize
+            self.cursor_x = len(self.data) % self.linesize
         else:
             self.cursor_y = self.bounds.h - 1
             self.cursor_x = 15
@@ -981,7 +895,7 @@ class HexWindow(textmode.Window):
         '''toggle selection mode'''
 
         if not self.mode & HexWindow.MODE_SELECT:
-            self.selection_start = (self.address + self.cursor_y * 16 +
+            self.selection_start = (self.address + self.cursor_y * self.linesize +
                                     self.cursor_x)
             self.selection_end = self.selection_start
 
@@ -998,8 +912,8 @@ class HexWindow(textmode.Window):
         '''update selection start/end'''
 
         if self.mode & HexWindow.MODE_SELECT:
-            old_addr = self.old_addr + self.old_y * 16 + self.old_x
-            addr = self.address + self.cursor_y * 16 + self.cursor_x
+            old_addr = self.old_addr + self.old_y * self.linesize + self.old_x
+            addr = self.address + self.cursor_y * self.linesize + self.cursor_x
 
             if self.selection_start == self.selection_end:
                 if addr < self.selection_start:
@@ -1058,7 +972,7 @@ class HexWindow(textmode.Window):
         if not searchtext:
             return
 
-        pos = self.address + self.cursor_y * 16 + self.cursor_x
+        pos = self.address + self.cursor_y * self.linesize + self.cursor_x
         if again:
             pos += 1
 
@@ -1075,7 +989,7 @@ class HexWindow(textmode.Window):
         # text was found at offset
         self.clear_cursor()
         # if on the same page, move the cursor
-        pagesize = self.bounds.h * 16
+        pagesize = self.bounds.h * self.linesize
         if self.address < offset + len(searchtext) < self.address + pagesize:
             pass
         else:
@@ -1090,8 +1004,8 @@ class HexWindow(textmode.Window):
 
         # move cursor location
         diff = offset - self.address
-        self.cursor_y = diff // 16
-        self.cursor_x = diff % 16
+        self.cursor_y = diff // self.linesize
+        self.cursor_x = diff % self.linesize
         self.draw_cursor()
 
     def find_backwards(self, again=False):
@@ -1121,7 +1035,7 @@ class HexWindow(textmode.Window):
         if not searchtext:
             return
 
-        pos = self.address + self.cursor_y * 16 + self.cursor_x
+        pos = self.address + self.cursor_y * self.linesize + self.cursor_x
         try:
             offset = bytearray_find_backwards(self.data, searchtext, pos)
         except ValueError:
@@ -1135,7 +1049,7 @@ class HexWindow(textmode.Window):
         # text was found at offset
         self.clear_cursor()
         # if on the same page, move the cursor
-        pagesize = self.bounds.h * 16
+        pagesize = self.bounds.h * self.linesize
         if self.address < offset + len(searchtext) < self.address + pagesize:
             pass
         else:
@@ -1150,8 +1064,8 @@ class HexWindow(textmode.Window):
 
         # move cursor location
         diff = offset - self.address
-        self.cursor_y = diff // 16
-        self.cursor_x = diff % 16
+        self.cursor_y = diff // self.linesize
+        self.cursor_x = diff % self.linesize
         self.draw_cursor()
 
     def find_hex(self, again=False):
@@ -1193,14 +1107,14 @@ class HexWindow(textmode.Window):
         for x in range(0, len(searchtext), 2):
             hex_string = searchtext[x:x + 2]
             try:
-                value = int(hex_string, 16)
+                value = int(hex_string, self.linesize)
             except ValueError:
                 self.search_error('Invalid value in byte string')
                 return
 
             raw += chr(value)
 
-        pos = self.address + self.cursor_y * 16 + self.cursor_x
+        pos = self.address + self.cursor_y * self.linesize + self.cursor_x
         if again:
             pos += 1
 
@@ -1217,7 +1131,7 @@ class HexWindow(textmode.Window):
         # text was found at offset
         self.clear_cursor()
         # if on the same page, move the cursor
-        pagesize = self.bounds.h * 16
+        pagesize = self.bounds.h * self.linesize
         if self.address < offset + len(searchtext) < self.address + pagesize:
             pass
         else:
@@ -1232,8 +1146,8 @@ class HexWindow(textmode.Window):
 
         # move cursor location
         diff = offset - self.address
-        self.cursor_y = diff // 16
-        self.cursor_x = diff % 16
+        self.cursor_y = diff // self.linesize
+        self.cursor_x = diff % self.linesize
         self.draw_cursor()
 
     def jump_address(self):
@@ -1257,9 +1171,9 @@ class HexWindow(textmode.Window):
             return
 
         # make addr appear at cursor_y
-        addr -= self.cursor_y * 16
+        addr -= self.cursor_y * self.linesize
 
-        pagesize = self.bounds.h * 16
+        pagesize = self.bounds.h * self.linesize
         if addr > len(self.data) - pagesize:
             addr = len(self.data) - pagesize
         if addr < 0:
@@ -1294,7 +1208,7 @@ class HexWindow(textmode.Window):
             self.search_error('Invalid address')
             return
 
-        curr_addr = self.address + self.cursor_y * 16 + self.cursor_x
+        curr_addr = self.address + self.cursor_y * self.linesize + self.cursor_x
         addr = curr_addr + offset
         if addr < 0:
             addr = 0
@@ -1307,7 +1221,7 @@ class HexWindow(textmode.Window):
         if addr == curr_addr:
             return
 
-        pagesize = self.bounds.h * 16
+        pagesize = self.bounds.h * self.linesize
         if self.address <= addr < self.address + pagesize:
             # move the cursor
             self.clear_cursor()
@@ -1318,8 +1232,8 @@ class HexWindow(textmode.Window):
                 self.address = len(self.data) - pagesize
             self.draw()
 
-        self.cursor_x = (addr - self.address) % 16
-        self.cursor_y = (addr - self.address) // 16
+        self.cursor_x = (addr - self.address) % self.linesize
+        self.cursor_y = (addr - self.address) // self.linesize
         self.draw_cursor()
 
     def minus_offset(self):
@@ -1346,7 +1260,7 @@ class HexWindow(textmode.Window):
             self.search_error('Invalid address')
             return
 
-        curr_addr = self.address + self.cursor_y * 16 + self.cursor_x
+        curr_addr = self.address + self.cursor_y * self.linesize + self.cursor_x
         addr = curr_addr - offset
         if addr < 0:
             addr = 0
@@ -1359,7 +1273,7 @@ class HexWindow(textmode.Window):
         if addr == curr_addr:
             return
 
-        pagesize = self.bounds.h * 16
+        pagesize = self.bounds.h * self.linesize
         if self.address <= addr < self.address + pagesize:
             # move the cursor
             self.clear_cursor()
@@ -1370,14 +1284,14 @@ class HexWindow(textmode.Window):
                 self.address = len(self.data) - pagesize
             self.draw()
 
-        self.cursor_x = (addr - self.address) % 16
-        self.cursor_y = (addr - self.address) // 16
+        self.cursor_x = (addr - self.address) % self.linesize
+        self.cursor_y = (addr - self.address) // self.linesize
         self.draw_cursor()
 
     def copy_address(self):
         '''copy current address to jump history'''
 
-        addr = self.address + self.cursor_y * 16 + self.cursor_x
+        addr = self.address + self.cursor_y * self.linesize + self.cursor_x
         self.jumpaddr.textfield.history.append('{:08X}'.format(addr))
 
         # give visual feedback
@@ -1430,7 +1344,7 @@ class HexWindow(textmode.Window):
         '''move to next word'''
 
         end = len(self.data) - 1
-        addr = self.address + self.cursor_y * 16 + self.cursor_x
+        addr = self.address + self.cursor_y * self.linesize + self.cursor_x
 
         if isalphanum(self.data[addr]):
             while isalphanum(self.data[addr]) and addr < end:
@@ -1442,26 +1356,26 @@ class HexWindow(textmode.Window):
         if addr == self.address:
             return
 
-        pagesize = self.bounds.h * 16
+        pagesize = self.bounds.h * self.linesize
         if self.address < addr < self.address + pagesize:
             # only move cursor
             self.clear_cursor()
             diff = addr - self.address
-            self.cursor_y = diff // 16
-            self.cursor_x = diff % 16
+            self.cursor_y = diff // self.linesize
+            self.cursor_x = diff % self.linesize
         else:
             # scroll page
-            # round up to nearest 16
+            # round up to nearest `linesize`
             addr2 = addr
-            mod = addr2 % 16
+            mod = addr2 % self.linesize
             if mod != 0:
-                addr2 += 16 - mod
+                addr2 += self.linesize - mod
             else:
-                addr2 += 16
+                addr2 += self.linesize
             self.address = addr2 - pagesize
             diff = addr - self.address
-            self.cursor_y = diff // 16
-            self.cursor_x = diff % 16
+            self.cursor_y = diff // self.linesize
+            self.cursor_x = diff % self.linesize
             self.draw()
 
         self.draw_cursor()
@@ -1469,7 +1383,7 @@ class HexWindow(textmode.Window):
     def move_word_back(self):
         '''move to previous word'''
 
-        addr = self.address + self.cursor_y * 16 + self.cursor_x
+        addr = self.address + self.cursor_y * self.linesize + self.cursor_x
 
         # skip back over any spaces
         while addr > 0 and isspace(self.data[addr - 1]):
@@ -1479,28 +1393,28 @@ class HexWindow(textmode.Window):
         while addr > 0 and isalphanum(self.data[addr - 1]):
             addr -= 1
 
-        pagesize = self.bounds.h * 16
+        pagesize = self.bounds.h * self.linesize
         if self.address < addr < self.address + pagesize:
             # only move cursor
             self.clear_cursor()
             diff = addr - self.address
-            self.cursor_y = diff // 16
-            self.cursor_x = diff % 16
+            self.cursor_y = diff // self.linesize
+            self.cursor_x = diff % self.linesize
         else:
             # scroll page
-            # round up to nearest 16
+            # round up to nearest `linesize`
             addr2 = addr
-            mod = addr2 % 16
+            mod = addr2 % self.linesize
             if mod != 0:
-                addr2 += 16 - mod
+                addr2 += self.linesize - mod
             else:
-                addr2 += 16
+                addr2 += self.linesize
             self.address = addr2 - pagesize
             if self.address < 0:
                 self.address = 0
             diff = addr - self.address
-            self.cursor_y = diff // 16
-            self.cursor_x = diff % 16
+            self.cursor_y = diff // self.linesize
+            self.cursor_x = diff % self.linesize
             self.draw()
 
         self.draw_cursor()
@@ -2324,7 +2238,8 @@ def hexview_main(filename):
     colors.status = colors.cursor
     colors.invisibles = textmode.video_color(BLUE, CYAN, bold=True)
 
-    view = HexWindow(0, 0, 80, textmode.VIDEO.h - 1, colors)
+    width = OPT_FORCE_WINDOW_WIDTH if OPT_FORCE_WINDOW_WIDTH else textmode.VIDEO.w
+    view = HexWindow(0, 0, width, textmode.VIDEO.h - 1, colors)
     try:
         view.load(filename)
     except OSError as err:
@@ -2360,6 +2275,7 @@ def usage():
       --no-vlines      Disable vertical lines
   -v, --version        Display version and exit
       --ebcdic         Interpret printable chars as EBCDIC
+      --80             Force 80-column mode even for wider terminals
 ''')
     sys.exit(1)
 
@@ -2367,13 +2283,13 @@ def usage():
 def get_options():
     '''parse command line options'''
 
-    global OPT_LINEMODE, OPT_ENCODING
+    global OPT_LINEMODE, OPT_ENCODING, OPT_FORCE_WINDOW_WIDTH
 
     try:
         opts, args = getopt.getopt(sys.argv[1:], 'hv',
                                    ['help', 'no-color', 'no-lines',
                                     'ascii-lines', 'no-hlines', 'no-vlines',
-                                    'version', 'ebcdic'])
+                                    'version', 'ebcdic', '80'])
     except getopt.GetoptError:
         short_usage()
 
@@ -2398,6 +2314,9 @@ def get_options():
         
         elif opt == '--ebcdic':
             OPT_ENCODING = CHAR_ENCODINGS['cp500']
+
+        elif opt == '--80':
+            OPT_FORCE_WINDOW_WIDTH = 80
 
         elif opt in ('-v', '--version'):
             print('hexview version {}'.format(VERSION))
