@@ -1678,11 +1678,11 @@ class HexWindow(textmode.Window):
             self.valueview.update_status()
 
     def toggle_char_interpretation(self):
+        '''Choose the next encoding for displaying characters'''
         global OPT_ENCODING
         OPT_ENCODING = (OPT_ENCODING + 1) % len(CHAR_ENCODINGS)
-#        self.update_values()
-#        self.valueview.update_status()
         self.draw()
+        self.draw_cursor()
 
     def runloop(self):
         '''run the input loop
