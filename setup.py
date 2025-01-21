@@ -27,8 +27,8 @@
 
 from distutils.core import setup
 
-from hexviewlib.hexview import VERSION
-
+with open('hexviewlib/_version.py', 'r') as version_file:
+    VERSION = version_file.readlines()[0].split('=')[1]
 
 setup(name='hexview',
       version=VERSION,
@@ -52,6 +52,9 @@ setup(name='hexview',
       packages=['hexviewlib',],
       package_dir={'hexviewlib': 'hexviewlib'},
       scripts=['hexview', 'hexview.bat'],
+      install_requires=[
+        'windows-curses; platform_system=="Windows"'
+      ],      
       data_files=[('share/doc/hexview', ['LICENSE', 'README.md']),
                   ('share/doc/hexview/master/images', ['images/hexview.png',])]
 )
