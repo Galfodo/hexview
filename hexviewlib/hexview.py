@@ -44,7 +44,8 @@ from hexviewlib.textmode import KEY_TAB, KEY_BTAB, KEY_BS, KEY_DEL
 VERSION = '1.3'
 
 OPT_LINEMODE = textmode.LM_HLINE | textmode.LM_VLINE
-
+CHAR_ENCODINGS = { name: i for i, name in enumerate(['latin-1', 'cp500', 'cp437', ]) }
+OPT_ENCODING = CHAR_ENCODINGS['latin-1']
 
 class MemoryFile:
     '''access file data as if it is an in-memory array'''
@@ -182,18 +183,18 @@ class HexWindow(textmode.Window):
     FORWARD = 0
     BACKWARD = 1
 
-    def __init__(self, x, y, w, h, colors, title=None, border=True):
+    def __init__(self, x, y, w, h, colors, title=None, border=True, print_values=False):
         '''initialize'''
-
+        full_h = h
         # take off height for ValueSubWindow
-        h -= 6
+        h -= 6 if print_values else 0
         # turn off window shadow for HexWindow
         # because it clobbers the bottom statusbar
         super().__init__(x, y, w, h, colors, title, border, shadow=False)
         self.data = None
         self.address = 0
         self.cursor_x = self.cursor_y = 0
-        self.mode = HexWindow.MODE_8BIT | HexWindow.MODE_VALUES
+        self.mode = HexWindow.MODE_8BIT | (HexWindow.MODE_VALUES if print_values else 0)
         self.selection_start = self.selection_end = 0
         self.old_addr = self.old_x = self.old_y = 0
 
@@ -217,7 +218,7 @@ class HexWindow(textmode.Window):
         colors = textmode.ColorSet(WHITE, BLACK)
         colors.border = textmode.video_color(CYAN, BLACK)
         colors.status = textmode.video_color(CYAN, BLACK)
-        self.valueview = ValueSubWindow(x, y + self.frame.h - 1, w, 7,
+        self.valueview = ValueSubWindow(x, y + full_h - 7, w, 7,
                                         colors)
 
         self.address_fmt = '{:08X}  '
@@ -527,17 +528,20 @@ class HexWindow(textmode.Window):
     def draw_ascii(self, y):
         '''draw ascii bytes for line y'''
 
+        encoding = list(CHAR_ENCODINGS.keys())[OPT_ENCODING]
         invis = []
         line = ''
         offset = self.address + y * 16
         for i in range(0, 16):
             try:
                 ch = self.data[offset + i]
-                if ord(' ') <= ch <= ord('~'):
-                    line += chr(ch)
+                s = bytes([ch]).decode(encoding)
+                if s.isprintable():
+                    ch = s
                 else:
-                    line += '.'
+                    ch = '.'
                     invis.append(i)
+                line += ch
             except IndexError:
                 ch = ' '
 
@@ -1673,6 +1677,13 @@ class HexWindow(textmode.Window):
             self.update_values()
             self.valueview.update_status()
 
+    def toggle_char_interpretation(self):
+        global OPT_ENCODING
+        OPT_ENCODING = (OPT_ENCODING + 1) % len(CHAR_ENCODINGS)
+#        self.update_values()
+#        self.valueview.update_status()
+        self.draw()
+
     def runloop(self):
         '''run the input loop
         Returns state change code
@@ -1725,6 +1736,9 @@ class HexWindow(textmode.Window):
 
             elif key == 'v':
                 self.mode_selection()
+
+            elif key == 't':
+                self.toggle_char_interpretation()
 
             elif key == ':':
                 # command mode
@@ -2103,6 +2117,7 @@ class HelpWindow(textmode.TextWindow):
  ?                    Find backwards
  n        Ctrl-G      Find again
  x        Ctrl-X      Find hexadecimal
+ t                    Toggle char interpretation
 
  1                    View single bytes
  2                    View 16-bit words
@@ -2344,6 +2359,7 @@ def usage():
       --no-hlines      Disable horizontal lines
       --no-vlines      Disable vertical lines
   -v, --version        Display version and exit
+      --ebcdic         Interpret printable chars as EBCDIC
 ''')
     sys.exit(1)
 
@@ -2351,13 +2367,13 @@ def usage():
 def get_options():
     '''parse command line options'''
 
-    global OPT_LINEMODE
+    global OPT_LINEMODE, OPT_ENCODING
 
     try:
         opts, args = getopt.getopt(sys.argv[1:], 'hv',
                                    ['help', 'no-color', 'no-lines',
                                     'ascii-lines', 'no-hlines', 'no-vlines',
-                                    'version'])
+                                    'version', 'ebcdic'])
     except getopt.GetoptError:
         short_usage()
 
@@ -2379,6 +2395,9 @@ def get_options():
 
         elif opt == '--no-vlines':
             OPT_LINEMODE &= ~textmode.LM_VLINE
+        
+        elif opt == '--ebcdic':
+            OPT_ENCODING = CHAR_ENCODINGS['cp500']
 
         elif opt in ('-v', '--version'):
             print('hexview version {}'.format(VERSION))
