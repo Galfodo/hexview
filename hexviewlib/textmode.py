@@ -29,7 +29,8 @@ import re
 import sys
 import time
 import traceback
-import numpy as np
+#import numpy as np
+import array
 
 # the main video object
 VIDEO = None
@@ -159,7 +160,15 @@ class ScreenBuf:
         self.w = w
         self.h = h
 
-        self.textbuf = np.zeros(w*h, dtype=np.uint32) # bytearray(w * h)
+        self.textbuf = ScreenBuf._create_textbuf(w*h)
+
+    @staticmethod
+    def _create_textbuf(length, generator=None):
+        if generator:
+            return array.array('I', generator)
+            pass
+        else:
+            return array.array('I', [0]*length)
 
     def __getitem__(self, idx):
         '''Returns tuple: (ch, color) at idx
@@ -226,7 +235,7 @@ class ScreenBuf:
 
         offset = self.w * y + x
         w = len(msg)
-        self.textbuf[offset:offset + w] = bytes(msg, ScreenBuf.CODEPAGE)
+        self.textbuf[offset:offset + w] = self._create_textbuf(w, (ord(ch) for ch in msg))
 
     def hline(self, x, y, w, ch, color=0):
         '''repeat character horizontally'''
@@ -239,7 +248,7 @@ class ScreenBuf:
 #            ch |= 0x80
 
         offset = self.w * y + x
-        self.textbuf[offset:offset + w] = ch # bytes(chr(ch) * w, ScreenBuf.CODEPAGE)
+        self.textbuf[offset:offset + w] = ch
 
     def vline(self, x, y, h, ch, color=0):
         '''repeat character horizontally'''
@@ -392,7 +401,7 @@ class ColorScreenBuf(ScreenBuf):
 
         offset = self.w * y + x
         w = len(msg)
-        self.textbuf[offset:offset + w] = [ord(ch) for ch in msg] # bytes(msg, ScreenBuf.CODEPAGE)
+        self.textbuf[offset:offset + w] = self._create_textbuf(w, (ord(ch) for ch in msg))
         self.colorbuf[offset:offset + w] = bytes(chr(color) * w, ScreenBuf.CODEPAGE)
 
     def hline(self, x, y, w, ch, color):        # pylint: disable=signature-differs
@@ -406,7 +415,7 @@ class ColorScreenBuf(ScreenBuf):
 #            ch |= 0x80
 
         offset = self.w * y + x
-        self.textbuf[offset:offset + w] = ch # bytes(chr(ch) * w, ScreenBuf.CODEPAGE)
+        self.textbuf[offset:offset + w] = self._create_textbuf(w, (ch for _ in range(w)))
         self.colorbuf[offset:offset + w] = bytes(chr(color) * w, ScreenBuf.CODEPAGE)
 
     def vline(self, x, y, h, ch, color):        # pylint: disable=signature-differs
