@@ -139,17 +139,8 @@ class ScreenBuf:
     MonoScreenBuf or ColorScreenBuf and not directly instantiate
     this ScreenBuf class
 
-    The text buffer holds one byte per character in 7 bits ASCII
-    If the 8th bit is set, it is a special character (eg. a curses line)
+    The text buffer holds one unsigned int per character.
     '''
-
-    # codepage defines the character set
-    # the original charset of as IBM PC VGA screen was cp437
-    # but it gives me artifacts now (prints '$' signs, which could be a bug?)
-    # so use latin_1 or cp1252
-    # Note: we must use single-byte character encoding because we use a bytearray
-    # (which is a bad choice in today's world, but ScreenBuf mimics VGA)
-    CODEPAGE = 'cp1252'
 
     def __init__(self, w, h):
         '''initialize'''
@@ -191,10 +182,6 @@ class ScreenBuf:
         if ch == 0:
             # blank
             ch = ' '
-#        elif ch > 0x7f:
-#            # special curses character
-#            ch &= 0x7f
-#            ch |= 0x400000
         else:
             # make string
             ch = chr(ch)
@@ -213,10 +200,6 @@ class ScreenBuf:
 
         if isinstance(ch, str):
             ch = ord(ch)
-#        elif ch > 0x400000:
-#            # special curses character
-#            ch &= 0x7f
-#            ch |= 0x80
 
         if isinstance(idx, int):
             offset = idx
@@ -242,10 +225,6 @@ class ScreenBuf:
 
         if isinstance(ch, str):
             ch = ord(ch)
-#        elif ch > 0x400000:
-#            # special curses character
-#            ch &= 0x7f
-#            ch |= 0x80
 
         offset = self.w * y + x
         self.textbuf[offset:offset + w] = ch
@@ -255,10 +234,6 @@ class ScreenBuf:
 
         if isinstance(ch, str):
             ch = ord(ch)
-#        elif ch > 0x400000:
-#            # special curses character
-#            ch &= 0x7f
-#            ch |= 0x80
 
         offset = self.w * y + x
         for _ in range(0, h):
@@ -317,8 +292,7 @@ class MonoScreenBuf(ScreenBuf):
 class ColorScreenBuf(ScreenBuf):
     '''a color screen buffer consist of two planes:
     a text buffer and a color buffer
-    The text buffer holds one byte per character in 7 bits ASCII
-    If the 8th bit is set, it is a special character (eg. a curses line)
+    The text buffer holds one unsigned int per character.
     The color buffer holds one byte per color
     encoded as (bg << 4) | bold | fg
     '''
@@ -355,10 +329,6 @@ class ColorScreenBuf(ScreenBuf):
         if ch == 0:
             # blank
             ch = ' '
-#        elif ch > 0x7f:
-#            # special curses character
-#            ch &= 0x7f
-#            ch |= 0x400000
         else:
             # make string
             ch = chr(ch)
@@ -378,10 +348,6 @@ class ColorScreenBuf(ScreenBuf):
 
         if isinstance(ch, str):
             ch = ord(ch)
-#        elif ch > 0x400000:
-#            # special curses character
-#            ch &= 0x7f
-#            ch |= 0x80
 
         if isinstance(idx, int):
             offset = idx
@@ -402,31 +368,23 @@ class ColorScreenBuf(ScreenBuf):
         offset = self.w * y + x
         w = len(msg)
         self.textbuf[offset:offset + w] = self._create_textbuf(w, (ord(ch) for ch in msg))
-        self.colorbuf[offset:offset + w] = bytes(chr(color) * w, ScreenBuf.CODEPAGE)
+        self.colorbuf[offset:offset + w] = [color]*w
 
     def hline(self, x, y, w, ch, color):        # pylint: disable=signature-differs
         '''repeat character horizontally'''
 
         if isinstance(ch, str):
             ch = ord(ch)
-#        elif ch > 0x400000:
-#            # special curses character
-#            ch &= 0x7f
-#            ch |= 0x80
 
         offset = self.w * y + x
         self.textbuf[offset:offset + w] = self._create_textbuf(w, (ch for _ in range(w)))
-        self.colorbuf[offset:offset + w] = bytes(chr(color) * w, ScreenBuf.CODEPAGE)
+        self.colorbuf[offset:offset + w] = [color]*w
 
     def vline(self, x, y, h, ch, color):        # pylint: disable=signature-differs
         '''repeat character horizontally'''
 
         if isinstance(ch, str):
             ch = ord(ch)
-#        elif ch > 0x400000:
-#            # special curses character
-#            ch &= 0x7f
-#            ch |= 0x80
 
         offset = self.w * y + x
         for _ in range(0, h):
