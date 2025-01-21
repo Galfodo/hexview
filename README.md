@@ -48,3 +48,14 @@ or use `setup.py bdist` to create a package.
 
 - - -
 _Copyright 2016 by Walter de Jong <walter@heiho.net>_
+
+Galfodo fork - Added functionality
+----------------------------------
+* Automatically chooses 16 or 32 byte line width, depending on available screen space. This can be disabled with the `--80` option.
+* Installs a .bat file in your Python environment `Scripts` directory, so it can be used directly also on Windows.
+* Toggle between codepages for byte -> character display. Currently, these are: `latin-1`, `cp500` (EBCDIC) and `cp437` (IBM extended ASCII)
+
+**Buyer beware:** I rewrote the terminal text backing `bytebuffer` handling to use an `array` of unsigned `int`s. This eliminates the need for encoding and decoding each character value, but it may have unintended consequences.
+
+_Stein Pedersen <stein.pedersen@gmail.com> January 2025_
+
